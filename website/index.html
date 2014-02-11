@@ -1,0 +1,258 @@
+<!-- http://techslides.com/d3-map-starter-kit/ -->
+
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>2013 Feature Film Filming Locations</title>
+<style>
+.country:hover{
+  stroke: #fff;
+  stroke-width: 1.5px;
+}
+.text{
+  font-size:10px;
+  text-transform:capitalize;
+}
+#container {
+  margin:10px 310px 10px 10px ;
+  border:2px solid #000;
+  border-radius: 5px;
+  height:100%;
+  overflow:hidden;
+  background: #444444;
+}
+#detail {
+  width: 300px;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  margin-left: 10px;
+}
+#detail h1 {
+  text-align: center;
+  margin-top: 0px;
+}
+.hidden { 
+  display: none; 
+}
+.gpoint {
+  color: yellow;
+  fill: yellow;
+}
+.graticule {
+  fill: none;
+  stroke: #bbb;
+  stroke-width: .5px;
+  stroke-opacity: .5;
+}
+.equator {
+  stroke: #ccc;
+  stroke-width: 1px;
+}
+
+</style>
+</head>
+<body>
+
+<div id="container"></div>
+<div id="detail">
+  <h1>2013 Film Locations</h1>
+  <div id="filmlocation"></div>
+  <div id="filmname"></div>
+</div>
+<div style="width=100%; text-align: center;">data scraped without permission from imdb.com</div>
+
+<script src="js/d3.min.js"></script>
+<script src="js/topojson.v1.min.js"></script>
+<script>
+d3.select(window).on("resize", throttle);
+
+var zoom = d3.behavior.zoom()
+    .scaleExtent([1, 15])
+    .on("zoom", move);
+
+
+var width = document.getElementById('container').offsetWidth;
+var height = width / 2;
+
+var topo,projection,path,svg,g;
+
+var graticule = d3.geo.graticule();
+
+setup(width,height);
+
+function setup(width,height){
+  projection = d3.geo.mercator()
+    .translate([(width/2), (height/2)])
+    .scale( width / 2 / Math.PI);
+
+  path = d3.geo.path().projection(projection);
+
+  svg = d3.select("#container").append("svg")
+      .attr("width", width)
+      .attr("height", height)
+      .call(zoom)
+      .on("click", click)
+      .append("g");
+
+  g = svg.append("g");
+
+}
+
+d3.json("data/world-topo-min.json", function(error, world) {
+
+  var countries = topojson.feature(world, world.objects.countries).features;
+
+  topo = countries;
+  draw(topo);
+
+});
+
+function draw(topo) {
+
+  svg.append("path")
+     .datum(graticule)
+     .attr("class", "graticule")
+     .attr("d", path);
+
+
+  g.append("path")
+   .datum({type: "LineString", coordinates: [[-180, 0], [-90, 0], [0, 0], [90, 0], [180, 0]]})
+   .attr("class", "equator")
+   .attr("d", path);
+
+
+  var country = g.selectAll(".country").data(topo);
+
+  country.enter().insert("path")
+      .attr("class", "country")
+      .attr("d", path)
+      .attr("id", function(d,i) { return d.id; })
+      .attr("title", function(d,i) { return d.properties.name; })
+      .style("fill", function(d, i) { return "#000000"; });
+
+  //tooltips
+  country
+    .on("mousemove", function(d,i) {
+
+      d3.select("#filmlocation").html(d.properties.name);
+      d3.select("#filmname").html("");
+
+      })
+      .on("mouseout",  function(d,i) {
+        d3.select("#filmlocation").html("");
+        d3.select("#filmname").html("");
+      }); 
+
+
+  //EXAMPLE: adding some capitals from external CSV file
+  var dsv = d3.dsv(";;", "text/plain");
+  dsv("data/movielocationsgps.txt", function(err, capitals) {
+
+    capitals.forEach(function(i){
+      addpoint(i.Title, i.Link, i.Location, i.Lat, i.Lng );
+    });
+
+  });
+
+}
+
+
+function redraw() {
+  width = document.getElementById('container').offsetWidth;
+  height = width / 2;
+  d3.select('svg').remove();
+  setup(width,height);
+  draw(topo);
+}
+
+
+function move() {
+
+  var t = d3.event.translate;
+  var s = d3.event.scale; 
+  zscale = s;
+  var h = height/4;
+
+
+  t[0] = Math.min(
+    (width/height)  * (s - 1), 
+    Math.max( width * (1 - s), t[0] )
+  );
+
+  t[1] = Math.min(
+    h * (s - 1) + h * s, 
+    Math.max(height  * (1 - s) - h * s, t[1])
+  );
+
+  zoom.translate(t);
+  g.attr("transform", "translate(" + t + ")scale(" + s + ")");
+
+  //adjust the country hover stroke width based on zoom level
+  d3.selectAll(".country").style("stroke-width", 1.5 / s);
+
+}
+
+
+
+var throttleTimer;
+function throttle() {
+  window.clearTimeout(throttleTimer);
+    throttleTimer = window.setTimeout(function() {
+      redraw();
+    }, 200);
+}
+
+
+//geo translation on mouse click in map
+function click() {
+  var latlon = projection.invert(d3.mouse(this));
+  console.log(latlon);
+}
+
+
+//function to add points and text to the map (used in plotting capitals)
+function addpoint(title, link, location, lat, lng ) {
+
+  var gpoint = g.append("g").attr("class", "gpoint");
+  var x = projection([lng, lat])[0];
+  var y = projection([lng, lat])[1];
+
+  gpoint.append("svg:circle")
+        .attr("cx", x)
+        .attr("cy", y)
+        .attr("class", "point")
+        .attr("r", 0.25)
+        .attr("movie", title)
+        .attr("link", link)
+        .attr("location", location);
+
+  gpoint
+      .on("mousemove", function() {
+        var url = '<a href=\"' + this.childNodes[0].attributes["link"].value + '\" target=\"_blank\">' + this.childNodes[0].attributes["movie"].value + '</a>';
+        d3.select("#filmlocation").html(this.childNodes[0].attributes["location"].value);
+        d3.select("#filmname").html(url);
+
+      })
+      .on("click", function() {
+        window.open(this.childNodes[0].attributes["link"].value);
+      })
+      .on("mouseout",  function() {
+        d3.select("#filmlocation").html("");
+        d3.select("#filmname").html("");
+      }); 
+
+  //conditional in case a point has no associated text
+  // if(text.length>0){
+
+  //   gpoint.append("text")
+  //         .attr("x", x+2)
+  //         .attr("y", y+2)
+  //         .attr("class","text")
+  //         .text(text);
+  // }
+
+}
+
+</script>
+</body>
+</html>
